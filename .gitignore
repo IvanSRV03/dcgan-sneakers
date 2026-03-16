@@ -1,0 +1,24 @@
+# entorno virtual
+venv/
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# modelos
+*.pt
+*.pth
+
+# datasets
+data/
+dataset/
+
+# logs
+runs/
+logs/
+
+# sistema
+.DS_Store
+Thumbs.dboutputs/ 
