@@ -1,16 +1,8 @@
-# DCGAN — Generador de Tenis
+# DCGAN — Generador de Tenis 👟
 
-Experimento para el proyecto de Deep Learning. La idea era entrenar una DCGAN con fotos de tenis de StockX y ver si el modelo podía aprender a generar tenis nuevos por su cuenta.
+Proyecto para la materia de Deep Learning. Entrené una DCGAN con ~1,220 fotos de tenis de StockX para que el modelo aprendiera a generar tenis nuevos por su cuenta.
 
-El dataset son ~1220 imágenes en JPG, todas con fondo blanco, lo cual ayudó bastante porque el modelo no tenía que lidiar con fondos complicados.
-
----
-
-## Qué hace
-
-Entrena una red generativa adversarial (DCGAN) con imágenes de tenis. El Generator aprende a crear tenis falsos que el Discriminator no pueda distinguir de los reales. Después de 300 epochs el modelo ya genera tenis reconocibles con forma, suela y color.
-
-También incluye interpolación en el espacio latente — básicamente mezclar dos puntos del espacio de ruido para ver cómo el modelo transiciona entre un estilo de tenis y otro.
+El dataset son imágenes JPG con fondo blanco uniforme, lo cual ayudó bastante porque el modelo no tuvo que lidiar con fondos complicados y se concentró en aprender la forma del tenis desde temprano.
 
 ---
 
@@ -19,11 +11,45 @@ También incluye interpolación en el espacio latente — básicamente mezclar d
 | Epoch | Qué se ve |
 |-------|-----------|
 | 1 | Ruido puro, nada reconocible |
-| 20 | Siluetas borrosas, colores básicos |
+| 20 | Siluetas borrosas, colores básicos emergentes |
 | 170 | Formas reconocibles, variedad de estilos |
 | 300 | Tenis con forma, suela y color definidos |
+| 500 | Mayor detalle, texturas, variedad de estilos |
 
-La interpolación más interesante que salió fue un Yeezy Slide transformándose en zapatilla de fútbol con tacos — se ve cómo el modelo mezcla características visuales entre dos puntos del espacio latente.
+La interpolación más interesante: una bota alta Nike transformándose en un cleat de fútbol americano en 10 pasos — la caña baja, aparecen los tacos, la forma se alarga. El modelo lo aprendió solo, sin etiquetas.
+
+---
+
+## Arquitectura
+
+DCGAN siguiendo el paper de Radford et al. (2015), adaptada para 128×128px en lugar de las 64×64 originales.
+
+**Generator** — toma un vector de ruido `z` (dim=128) y lo expande con 6 capas ConvTranspose2d hasta llegar a una imagen RGB 128×128. Usa BatchNorm + ReLU en cada capa y Tanh al final. ~13.2M parámetros.
+
+**Discriminador** — recibe una imagen 128×128 y la comprime con Conv2d stride=2 hasta producir un único logit real/falso. Usa BatchNorm + LeakyReLU(0.2). ~11.1M parámetros.
+
+---
+
+## Decisiones técnicas
+
+- **BCEWithLogitsLoss** — más estable numéricamente que BCE + Sigmoid por separado
+- **Label Smoothing (0.9)** — evita que el Discriminador se vuelva demasiado confiado
+- **Adam con β1=0.5** — recomendado en el paper original para estabilizar el entrenamiento
+- **LR Scheduler** — reduce el LR a la mitad en epoch 250 y 400 para refinar detalles
+- **Data Augmentation** — flip horizontal, random crop y variaciones de brillo/contraste
+
+---
+
+## Experimentación
+
+Se probaron tres variantes durante el proyecto:
+
+| Variante | Resultado |
+|----------|-----------|
+| DCGAN 300 epochs | Baseline, tenis reconocibles |
+| WGAN + weight clipping | Loss explotó, descartado |
+| WGAN-GP | Estable pero resultados visuales inferiores con este dataset |
+| **DCGAN + Augmentation + LR Scheduler 500 epochs** | **Versión final, mejores resultados** |
 
 ---
 
@@ -33,12 +59,12 @@ La interpolación más interesante que salió fue un Yeezy Slide transformándos
 dcgan-sneakers/
 ├── config.py           # Hiperparámetros
 ├── src/
-│   ├── model.py        # Generator y Discriminator
-│   ├── dataset.py      # Carga de imágenes
-│   ├── train.py        # Entrenamiento
-│   ├── generate.py     # Generación e interpolación
+│   ├── model.py        # Generator y Discriminador
+│   ├── dataset.py      # Carga de imágenes + augmentation
+│   ├── train.py        # Loop de entrenamiento
+│   ├── generate.py     # Generación e interpolación SLERP
 │   └── utils.py        # Checkpoints, visualizaciones
-├── data/raw/           # Imágenes de tenis (no incluidas en el repo)
+├── data/raw/           # Imágenes de tenis (no incluidas)
 └── outputs/
     ├── samples/        # Grillas por epoch
     └── checkpoints/    # Pesos del modelo
@@ -59,22 +85,30 @@ pip install -r requirements.txt
 python src/train.py
 
 # Generar tenis nuevos
-python src/generate.py --checkpoint outputs/checkpoints/checkpoint_epoch_0300.pt
+python src/generate.py --checkpoint outputs/checkpoints/checkpoint_epoch_0500.pt
 
 # Interpolación entre dos tenis
-python src/generate.py --checkpoint outputs/checkpoints/checkpoint_epoch_0300.pt --interpolate --steps 10
+python src/generate.py --checkpoint outputs/checkpoints/checkpoint_epoch_0500.pt --interpolate --steps 10
 ```
 
 ---
 
-## Setup usado
+## Setup
 
-- GPU: NVIDIA RTX 3070 (8GB VRAM)
+- GPU: NVIDIA RTX 3070 (8.6 GB VRAM)
 - Python 3.11 + PyTorch 2.5.1 con CUDA 12.1
-- ~2 horas de entrenamiento para 300 epochs
+- ~4 horas de entrenamiento para 500 epochs
 
 ---
 
 ## Notas
 
-El dataset pequeño (1220 imágenes) se nota en los resultados — algunos tenis generados tienen artefactos de color o formas un poco raras. Con más datos probablemente mejoraría bastante la nitidez. Las imágenes de fondo blanco fueron una ventaja real, el modelo aprendió el fondo desde muy temprano y se concentró en la forma del tenis.
+Con 1,220 imágenes el modelo aprende bien la estructura global pero le cuesta el detalle fino — logos, agujetas, texturas específicas. Con más datos y más epochs probablemente mejoraría bastante. Las imágenes de fondo blanco fueron una ventaja real.
+
+Se experimentó con WGAN y WGAN-GP pero el DCGAN con augmentation y más epochs dio mejores resultados visuales para este dataset en particular.
+
+---
+
+## Referencia
+
+Radford et al., *Unsupervised Representation Learning with Deep Convolutional Generative Adversarial Networks* (2015). [arXiv:1511.06434](https://arxiv.org/abs/1511.06434)
