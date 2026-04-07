@@ -1,6 +1,5 @@
-# src/dataset.py — Carga y preprocesamiento del dataset de tenis
+# src/dataset.py — Data Augmentation para DCGAN
 
-import os
 from pathlib import Path
 from PIL import Image
 import torch
@@ -9,66 +8,50 @@ import torchvision.transforms as T
 
 
 class SneakerDataset(Dataset):
-    """
-    Dataset de tenis para DCGAN.
-    Espera una carpeta con imágenes .jpg/.jpeg/.png (sin subcarpetas necesarias).
-    Las imágenes tienen fondo blanco, lo cual es ideal para normalización estándar.
-    """
-
     EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
-    def __init__(self, root_dir: str, image_size: int = 128):
+    def __init__(self, root_dir, image_size=128, augment=True):
         self.root_dir = Path(root_dir)
-        self.image_size = image_size
-
-        # Recolecta todas las imágenes recursivamente
         self.image_paths = [
             p for p in self.root_dir.rglob("*")
             if p.suffix.lower() in self.EXTENSIONS
         ]
-
         if len(self.image_paths) == 0:
-            raise FileNotFoundError(
-                f"No se encontraron imágenes en '{root_dir}'.\n"
-                f"Extensiones soportadas: {self.EXTENSIONS}"
-            )
-
+            raise FileNotFoundError(f"No se encontraron imágenes en '{root_dir}'.")
         print(f"[Dataset] {len(self.image_paths)} imágenes encontradas en '{root_dir}'")
 
-        # Transformaciones estándar para DCGAN
-        # Normalize a [-1, 1] porque el Generator usa Tanh como activación final
-        self.transform = T.Compose([
-            T.Resize((image_size, image_size), interpolation=T.InterpolationMode.LANCZOS),
-            T.CenterCrop(image_size),
-            T.ToTensor(),                          # [0, 255] → [0.0, 1.0]
-            T.Normalize([0.5, 0.5, 0.5],           # → [-1.0, 1.0]
-                        [0.5, 0.5, 0.5]),
-        ])
+        if augment:
+            self.transform = T.Compose([
+                T.Resize((int(image_size * 1.1), int(image_size * 1.1)),
+                         interpolation=T.InterpolationMode.LANCZOS),
+                T.RandomCrop(image_size),
+                T.RandomHorizontalFlip(p=0.5),
+                T.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.10),
+                T.ToTensor(),
+                T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+            ])
+        else:
+            self.transform = T.Compose([
+                T.Resize((image_size, image_size),
+                         interpolation=T.InterpolationMode.LANCZOS),
+                T.CenterCrop(image_size),
+                T.ToTensor(),
+                T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+            ])
 
     def __len__(self):
         return len(self.image_paths)
 
-    def __getitem__(self, idx: int) -> torch.Tensor:
-        img_path = self.image_paths[idx]
-        try:
-            img = Image.open(img_path).convert("RGB")
-        except Exception as e:
-            raise RuntimeError(f"Error al abrir imagen '{img_path}': {e}")
+    def __getitem__(self, idx):
+        img = Image.open(self.image_paths[idx]).convert("RGB")
         return self.transform(img)
 
 
-def get_dataloader(root_dir: str, image_size: int, batch_size: int,
-                   num_workers: int = 4, shuffle: bool = True) -> DataLoader:
-    """Crea y retorna un DataLoader listo para entrenamiento."""
-    dataset = SneakerDataset(root_dir=root_dir, image_size=image_size)
-    loader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
-        pin_memory=True,       # Acelera transferencia CPU→GPU
-        drop_last=True,        # Evita batches incompletos al final
-    )
+def get_dataloader(root_dir, image_size, batch_size,
+                   num_workers=4, shuffle=True, augment=True):
+    dataset = SneakerDataset(root_dir=root_dir, image_size=image_size, augment=augment)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle,
+                        num_workers=num_workers, pin_memory=True, drop_last=True)
     print(f"[DataLoader] {len(dataset)} imgs | batch_size={batch_size} | "
-          f"{len(loader)} batches por epoch")
+          f"{len(loader)} batches por epoch | augment={augment}")
     return loader
